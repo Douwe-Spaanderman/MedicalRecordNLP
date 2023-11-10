@@ -1,0 +1,7 @@
+{  
+    "Microscopy": {  
+        "pattern": "(?i)(Microscopie|Microscopy)(.*?)(Conclusion|Conclusie|Molecular research conclusion|Conclusie moleculair onderzoek|Immunohistochemie|Immunohistochemistry|Moleculaire diagnostiek|Molecular diagnostics|Macroscopie|Macroscopy|$)",   
+        "flags": "DOTALL",
+        "date": "2023-11-07"
+    }
+}
