@@ -18,5 +18,10 @@
         "pattern": "(?i)(Conclusie|Conclusion)(.*?)(Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics|Microscopie|Microscopy|Immunohistochemie|Immunohistochemistry|Macroscopie|Macroscopy|Responsible pathologist|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"
+    },
+    "Compliance": {  
+        "pattern": "(?i)(COMPLIANCE.*?:\n*)(.*?)(Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics|Microscopie|Microscopy|Immunohistochemie|Immunohistochemistry|Macroscopie|Macroscopy|Responsible pathologist|$)",   
+        "flags": "DOTALL",
+        "date": "2023-11-07"
     }
 }  
