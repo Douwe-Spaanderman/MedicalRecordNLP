@@ -22,7 +22,7 @@ from scispacy.linking import EntityLinker
 
 from thefuzz import fuzz
 
-from typing import Optional, Union, List, Dict
+from typing import Optional, Union, List, Dict, Tuple
 
 class StandardizedReport:
     def __init__(self, name, report:str, regex:list, bionlp13cg:spacy.lang.en.English, core_sci:Optional[spacy.lang.en.English]=None, matcher:Optional[spacy.matcher.matcher.Matcher]=None, linker:Optional[EntityLinker]=None, api_key:str=None, verbose:bool = False):
@@ -73,27 +73,30 @@ class StandardizedReport:
                 warnings.warn(f"You tried to run the rule based matcher, however you did not provide it initially")
             return False
         
-    def extract_patterns(self, pattern:str) -> str:
+    def extract_patterns(self, pattern:str) -> Tuple[int]:
         """
         Extract specific text from the whole report based on regex pattern
+        UPDATED: now only returns start - finish idx
         """
         regex = self.regex[pattern]["pattern"]
-        text = regex.search(self.report)
-        if not text:
+        output = regex.search(self.report.text)
+        if not output:
             if self.verbose:
                 warnings.warn(f"Pattern: {pattern} not found for {self.name}")
             return False
             
-        text = text.group(0).strip()
+        start, end = output.span()
         
-        return text
+        return start, end
     
-    def extract_matcher_ents(self, doc:spacy.tokens.doc.Doc, label:Union[str, List[str]]="all") -> spacy.tokens.doc.Doc:
+    def extract_matcher_ents(self, doc:spacy.tokens.doc.Doc, label:Union[str, List[str]]="all"):
         """
         Run the matcher and add the ents to doc. label can be used to specifiy which ent you want to find.
+        UPDATED: now returns ents instead of doc
         """
         matches = self.run_matcher(doc)
 
+        ents = ()
         for match_id, start, end in matches:
             entity_label = self.bionlp13cg.vocab.strings[match_id]
             if label != "all":
@@ -104,9 +107,9 @@ class StandardizedReport:
                     continue
 
             ent = Span(doc, start, end, label=entity_label)
-            doc = self.add_ent(ent, doc)
+            ents = ents + (ent,)
         
-        return doc
+        return ents
 
     def clear_ents(self, doc:spacy.tokens.doc.Doc) -> spacy.tokens.doc.Doc:
         """
@@ -121,7 +124,9 @@ class StandardizedReport:
 
         ents is tuple[pacy.tokens.span.Span], somehow wasn't able to do typing this way?
         """
-        doc.ents = doc.ents + ents
+        for ent in ents:
+            doc = self.add_ent(ent, doc)
+            
         return doc
 
     def add_ent(self, ent:spacy.tokens.span.Span, doc:spacy.tokens.doc.Doc) -> spacy.tokens.doc.Doc:
@@ -258,6 +263,17 @@ class StandardizedReport:
                 warnings.warn(f"You tried to match canonical name using entitylinker, however you did not provide it initially")
             return text
         
+    def clean_ents_text_range(self, ents:List[spacy.tokens.span.Span], text_range:Tuple[int]):
+        """
+        Cleans ents based on a specific text range, i.e. only in parts of the documents
+        """
+        new_ents = ()
+        for idx, ent in enumerate(ents):
+            if ent.start_char >= text_range[0] and ent.start_char <= text_range[1]:
+                new_ents = new_ents + (ent,)
+
+        return new_ents
+
     def clean_ents(self, ents:List[spacy.tokens.span.Span]):
         """
         Cleans from similar ents, e.g. Liposarcoma and Liposarcoma Knee. Cleans using the linker and fuzz
@@ -364,201 +380,125 @@ class PathologyReport(StandardizedReport):
         )
 
         self.verbose = verbose
+        self.phenotype = ()
+        self.location = ()
+        self.cell = ()
+        self.grade = ()
+        self.genes = ()
+        self.mitosis = ()
+        self.necrosis = ()
+
+    def run_complete_pipeline(self):
+        if type(self.report) == str:
+            self.report = self.run_bionlp13cg(self.report)
+
+        if not self.report or not self.report.ents:
+            return False
+
+        # Extract spans from different parts of the report
+        self.extract_conclusion()
+        self.extract_microscopy()
+        self.extract_immunohistochemistry()
+        self.extract_moleculaire()
+
         # For debugging see what is in compliance
         self.compliance = self.extract_patterns("Compliance")
         if self.compliance:
             import ipdb; ipdb.set_trace()
 
-    def run_complete_pipeline(self):
-        # Extract the different parts of the report and find spans
-        conclusion = self.extract_conclusion()
-        microscopy = self.extract_microscopy()
-        immunohistochemistry = self.extract_immunohistochemistry()
-        moleculaire = self.extract_moleculaire()
-
-        # Map all partly analyzed documents back to complete report
-        doc = self.map_to_report([conclusion, microscopy, immunohistochemistry, moleculaire])
+        # clean and add ents to self.report
+        combined_ents = self.phenotype + self.location + self.cell + self.grade + self.genes + self.mitosis + self.necrosis
+        self.report = self.clear_ents(self.report)
+        self.report = self.add_ents(self.report, combined_ents)
 
         # Extract relations - automatically mapped to prodigy
-        relations = self.add_speech_dependency(doc, ["GRADE"], ["ADJ", "NUM", "DET"])
-        relations += self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
-        relations += self.add_speech_dependency(doc, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
+        relations = self.add_speech_dependency(self.report, ["GRADE"], ["ADJ", "NUM", "DET"])
+        relations += self.add_speech_dependency(self.report, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
+        relations += self.add_speech_dependency(self.report, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
         
         # Map spans to prodigy
-        spans = self.map_to_prodigy_spans(doc)
+        spans = self.map_to_prodigy_spans(self.report)
 
-        return self.map_to_prodigy(doc, spans, relations)
+        return self.map_to_prodigy(self.report, spans, relations)
         
     def extract_conclusion(self):
-        self.conclusion = self.extract_patterns("Conclusion")
-        if not self.conclusion:
+        conclusion = self.extract_patterns("Conclusion")
+        if not conclusion:
             if self.verbose:
                 warnings.warn(f"You tried to extract conclusion, however no regex match was found")
             return False
 
-        if type(self.conclusion) == str:
-            self.conclusion = self.run_bionlp13cg(self.conclusion)
-
-        if not self.conclusion or not self.conclusion.ents:
-            return False
-
         # Phenotype has CANCER label
-        phenotype = [ent for ent in self.conclusion.ents if ent.label_ == "CANCER" and not ent.text.upper() == "TUMOR"]
-        if not phenotype:
-            phenotype = [ent for ent in self.conclusion.ents if ent.label_ == "CELL"]
+        self.phenotype = [ent for ent in self.report.ents if ent.label_ == "CANCER" and not ent.text.upper() == "TUMOR"]
+        if not self.phenotype:
+            self.phenotype = [ent for ent in self.report.ents if ent.label_ == "CELL"]
 
-        phenotype = self.clean_ents(phenotype)
+        self.phenotype = self.clean_ents_text_range(self.phenotype, conclusion)
+        self.phenotype = self.clean_ents(self.phenotype)
 
         # Location has ORGAN/TISSUE/ANATOMICAL_SYSTEM label
-        location = [ent for ent in self.conclusion.ents if ent.label_ in ["ORGAN", "TISSUE", "ANATOMICAL_SYSTEM"]]
-        location = self.clean_ents(location)
+        self.location = [ent for ent in self.report.ents if ent.label_ in ["ORGAN", "TISSUE", "ANATOMICAL_SYSTEM"]]
+        self.location = self.clean_ents_text_range(self.location, conclusion)
+        self.location = self.clean_ents(self.location)
 
         # Cell type based on CELL label
-        cell = tuple([ent for ent in self.conclusion.ents if ent.label_ == "CELL" and not ent.text.upper() == "CELL"])
-        self.conclusion = self.clear_ents(self.conclusion)
-        self.conclusion = self.add_ents(self.conclusion, phenotype + location + cell)
+        if not self.cell:
+            self.cell = tuple([ent for ent in self.report.ents if ent.label_ == "CELL" and not ent.text.upper() == "CELL"])
+            self.cell = self.clean_ents_text_range(self.cell, conclusion)
 
         # Extract grade with matcher
-        self.conclusion = self.extract_matcher_ents(self.conclusion, label="GRADE")
-
-        return self.conclusion
+        self.grade = self.extract_matcher_ents(self.report, label="GRADE")
+        self.grade = self.clean_ents_text_range(self.grade, conclusion)
 
     def extract_microscopy(self):
-        self.microscopy = self.extract_patterns("Microscopy")
-        if not self.microscopy:
+        microscopy = self.extract_patterns("Microscopy")
+        if not microscopy:
             if self.verbose:
                 warnings.warn(f"You tried to extract microscopy, however no regex match was found")
             return False
 
-        if type(self.microscopy) == str:
-            self.microscopy = self.run_bionlp13cg(self.microscopy)
-
-        if not self.microscopy or not self.microscopy.ents:
-            return False
-
         # For now clearing all not gene ents
-        genes = tuple([ent for ent in self.microscopy.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
-        self.microscopy = self.clear_ents(self.microscopy)
-        self.microscopy = self.add_ents(self.microscopy, genes)
+        genes = tuple([ent for ent in self.report.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
+        genes = self.clean_ents_text_range(genes, microscopy) 
+        self.genes = self.genes + genes
 
-        self.microscopy = self.extract_matcher_ents(self.microscopy)
+        # Extract grade with matcher
+        if not self.grade:
+            self.grade = self.extract_matcher_ents(self.report, label="GRADE")
+            self.grade = self.clean_ents_text_range(self.grade, microscopy)
 
-        return self.microscopy
+        # Extract mitosis with matcher
+        self.mitosis = self.extract_matcher_ents(self.report, label="GRADE")
+        self.mitosis = self.clean_ents_text_range(self.mitosis, microscopy)
+
+        # Extract necrosis with matcher
+        self.necrosis = self.extract_matcher_ents(self.report, label="NECROSIS")
+        self.necrosis = self.clean_ents_text_range(self.necrosis, microscopy)
+
 
     def extract_immunohistochemistry(self):
-        self.immunohistochemistry = self.extract_patterns("Immunohistochemistry")
-        if not self.immunohistochemistry:
+        immunohistochemistry = self.extract_patterns("Immunohistochemistry")
+        if not immunohistochemistry:
             if self.verbose:
                 warnings.warn(f"You tried to extract immunohistochemistry, however no regex match was found")
             return False
 
-        if type(self.immunohistochemistry) == str:
-            self.immunohistochemistry = self.run_bionlp13cg(self.immunohistochemistry)
-
-        if not self.immunohistochemistry or not self.immunohistochemistry.ents:
-            return False
-
         # For now clearing all not gene ents
-        genes = tuple([ent for ent in self.immunohistochemistry.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
-        self.immunohistochemistry = self.clear_ents(self.immunohistochemistry)
-        self.immunohistochemistry = self.add_ents(self.immunohistochemistry, genes)
-
-        return self.immunohistochemistry
+        genes = tuple([ent for ent in self.report.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
+        genes = self.clean_ents_text_range(genes, immunohistochemistry) 
+        self.genes = self.genes + genes
 
     def extract_moleculaire(self):
-        self.moleculaire = self.extract_patterns("Moleculaire")
-        if not self.moleculaire:
+        moleculaire = self.extract_patterns("Moleculaire")
+        if not moleculaire:
             if self.verbose:
                 warnings.warn(f"You tried to extract moleculaire, however no regex match was found")
             return False
 
-        if type(self.moleculaire) == str:
-            self.moleculaire = self.run_bionlp13cg(self.moleculaire)
-
-        if not self.moleculaire or not self.moleculaire.ents:
-            return False
-
         # For now clearing all not gene ents
-        genes = tuple([ent for ent in self.moleculaire.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
-        self.moleculaire = self.clear_ents(self.moleculaire)
-        self.moleculaire = self.add_ents(self.moleculaire, genes)
-
-        return self.moleculaire
-
-    def map_to_report(self, doc_parts:Union[spacy.tokens.doc.Doc, List[spacy.tokens.doc.Doc]]):
-        if type(doc_parts) == dict:
-            doc_parts = [doc_parts]
-
-        # Remove False
-        doc_parts = [doc_part for doc_part in doc_parts if doc_part]
-
-        # First identify where parts are in text
-        parts = []
-        for doc_part in doc_parts:
-            start_location = self.report.find(doc_part.text)
-            end_location = start_location + len(doc_part.text)
-            parts.append((start_location, end_location))
-
-        # Now combine these
-        order = sorted(range(len(parts)), key=parts.__getitem__)
-        parts = [parts[i] for i in order]
-        doc_parts = [doc_parts[i] for i in order]
-
-        structured_report = []
-        for idx, (part, doc_part) in enumerate(zip(parts, doc_parts)):
-            if idx == 0:
-                # Add start
-                if part[0] > 0:
-                    structured_report.append(self.run_bionlp13cg(self.report[:part[0]]))
-                structured_report.append(doc_part)
-            elif idx == len(parts) - 1:
-                # Add piece between analyzed documents
-                if part[0] > parts[idx-1][1]:
-                    structured_report.append(self.run_bionlp13cg(self.report[parts[idx-1][1]:part[0]]))
-
-                structured_report.append(doc_part)
-                # Add end
-                if part[1] < len(self.report):
-                    structured_report.append(self.run_bionlp13cg(self.report[part[1]:]))
-            else:
-                # There might be overlap but whatever
-                # Add piece between analyzed documents
-                if part[0] > parts[idx-1][1]:
-                    structured_report.append(self.run_bionlp13cg(self.report[parts[idx-1][1]:part[0]]))
-
-                structured_report.append(doc_part)
-
-        # Needed to concat the documents
-        # This is actually implemented in a newer version of spacy under merge.from_docs, however not in one compatible with scispacy
-        attrs = ["LEMMA", "NORM", "ENT_IOB", "ENT_KB_ID", "ENT_TYPE", "TAG", "POS", "HEAD", "DEP", "SPACY"]
-        vocab = {doc.vocab for doc in structured_report}
-        (vocab,) = vocab
-        concat_words = []
-        concat_spaces = []
-        concat_user_data = {}
-        char_offset = 0
-        for doc in structured_report:
-            concat_words.extend(t.text for t in doc)
-            concat_spaces.extend(bool(t.whitespace_) for t in doc)
-
-            for key, value in doc.user_data.items():
-                if isinstance(key, tuple) and len(key) == 4:
-                    data_type, name, start, end = key
-                    if start is not None or end is not None:
-                        start += char_offset
-                        if end is not None:
-                            end += char_offset
-                        concat_user_data[(data_type, name, start, end)] = copy.copy(value)
-                    else:
-                        warnings.warn("start or end is none")
-                else:
-                    warnings.warn("weeird key encountered")
-            char_offset += len(doc.text) if doc[-1].is_space else len(doc.text) + 1
-
-        arrays = [doc.to_array(attrs) for doc in structured_report]
-        concat_array = np.concatenate(arrays)
-        concat_doc = spacy.tokens.doc.Doc(vocab, words=concat_words, spaces=concat_spaces, user_data=concat_user_data)
-        return concat_doc.from_array(attrs, concat_array)
+        genes = tuple([ent for ent in self.report.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
+        genes = self.clean_ents_text_range(genes, moleculaire) 
+        self.genes = self.genes + genes
 
 def compile_patterns(patterns:dict):
     regex = {}
