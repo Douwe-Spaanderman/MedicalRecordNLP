@@ -1,25 +1,30 @@
 {  
     "Microscopy": {  
+        "start": "Microscopie|Microscopy",
         "pattern": "(?i)(Microscopie|Microscopy)(.*?)(Conclusion|Conclusie|Molecular research conclusion|Conclusie moleculair onderzoek|Immunohistochemie|Immunohistochemistry|Immuno histochemistry|Moleculaire diagnostiek|Molecular diagnostics|Macroscopie|Macroscopy|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"
     },
     "Immunohistochemistry": {  
+        "start": "Immunohistochemie:|Immunohistochemistry:|Immune histochemistry:",
         "pattern": "(?i)(Immunohistochemie:|Immunohistochemistry:|Immune histochemistry:)(.*?)(Conclusion|Conclusie|Molecular research conclusion|Conclusie moleculair onderzoek|Microscopie|Microscopy|Moleculaire diagnostiek|Molecular diagnostics|Macroscopie|Macroscopy|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"
     },
     "Moleculaire": {  
+        "start": "Moleculaire diagnostiek|Moleculaire pathologie|Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics",
         "pattern": "(?i)(Moleculaire diagnostiek|Moleculaire pathologie|Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics)(.*?)(Conclusion|Conclusie|Microscopie|Microscopy|Immunohistochemie|Immunohistochemistry|Immuno histochemistry|Macroscopie|Macroscopy|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"
     },
     "Conclusion": {  
+        "start": "Conclusie|Conclusion",
         "pattern": "(?i)(Conclusie|Conclusion)(.*?)(Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics|Microscopie|Microscopy|Immunohistochemie|Immunohistochemistry|Immuno histochemistry|Macroscopie|Macroscopy|Responsible pathologist|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"
     },
     "Compliance": {  
+        "start": "COMPLIANCE",
         "pattern": "(?i)(COMPLIANCE.*?:\n*)(.*?)(Conclusie moleculair onderzoek|Molecular research conclusion|Molecular diagnostics|Microscopie|Microscopy|Immunohistochemie|Immunohistochemistry|Immuno histochemistry|Macroscopie|Macroscopy|Responsible pathologist|$)",   
         "flags": "DOTALL",
         "date": "2023-11-07"

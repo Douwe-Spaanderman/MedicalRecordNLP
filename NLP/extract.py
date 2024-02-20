@@ -77,7 +77,7 @@ class StandardizedReport:
         """
         Extract specific text from the whole report based on regex pattern
         """
-        regex = self.regex[pattern]
+        regex = self.regex[pattern]["pattern"]
         text = regex.search(self.report)
         if not text:
             if self.verbose:
@@ -369,6 +369,26 @@ class PathologyReport(StandardizedReport):
         if self.compliance:
             import ipdb; ipdb.set_trace()
 
+    def run_complete_pipeline(self):
+        # Extract the different parts of the report and find spans
+        conclusion = self.extract_conclusion()
+        microscopy = self.extract_microscopy()
+        immunohistochemistry = self.extract_immunohistochemistry()
+        moleculaire = self.extract_moleculaire()
+
+        # Map all partly analyzed documents back to complete report
+        doc = self.map_to_report([conclusion, microscopy, immunohistochemistry, moleculaire])
+
+        # Extract relations - automatically mapped to prodigy
+        relations = self.add_speech_dependency(doc, ["GRADE"], ["ADJ", "NUM", "DET"])
+        relations += self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
+        relations += self.add_speech_dependency(doc, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
+        
+        # Map spans to prodigy
+        spans = self.map_to_prodigy_spans(doc)
+
+        return self.map_to_prodigy(doc, spans, relations)
+        
     def extract_conclusion(self):
         self.conclusion = self.extract_patterns("Conclusion")
         if not self.conclusion:
@@ -400,10 +420,7 @@ class PathologyReport(StandardizedReport):
 
         # Extract grade with matcher
         self.conclusion = self.extract_matcher_ents(self.conclusion, label="GRADE")
-        #relations = self.add_speech_dependency(self.conclusion, ["GRADE"], ["ADJ", "NUM", "DET"])
-        #spans = self.map_to_prodigy_spans(self.conclusion)
 
-        #return self.map_to_prodigy(self.conclusion, spans, relations)
         return self.conclusion
 
     def extract_microscopy(self):
@@ -425,12 +442,7 @@ class PathologyReport(StandardizedReport):
         self.microscopy = self.add_ents(self.microscopy, genes)
 
         self.microscopy = self.extract_matcher_ents(self.microscopy)
-        #relations = self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
-        #relations += self.add_speech_dependency(self.microscopy, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
 
-        #spans = self.map_to_prodigy_spans(self.microscopy)
-
-        #return self.map_to_prodigy(self.microscopy, spans, relations)
         return self.microscopy
 
     def extract_immunohistochemistry(self):
@@ -451,17 +463,13 @@ class PathologyReport(StandardizedReport):
         self.immunohistochemistry = self.clear_ents(self.immunohistochemistry)
         self.immunohistochemistry = self.add_ents(self.immunohistochemistry, genes)
 
-        #relations = self.add_speech_dependency(self.immunohistochemistry, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
-        #spans = self.map_to_prodigy_spans(self.immunohistochemistry)
-
-        #return self.map_to_prodigy(self.immunohistochemistry, spans, relations)
         return self.immunohistochemistry
 
     def extract_moleculaire(self):
         self.moleculaire = self.extract_patterns("Moleculaire")
         if not self.moleculaire:
             if self.verbose:
-                warnings.warn(f"You tried to extract immunohistochemistry, however no regex match was found")
+                warnings.warn(f"You tried to extract moleculaire, however no regex match was found")
             return False
 
         if type(self.moleculaire) == str:
@@ -471,15 +479,10 @@ class PathologyReport(StandardizedReport):
             return False
 
         # For now clearing all not gene ents
-        import ipdb; ipdb.set_trace()
         genes = tuple([ent for ent in self.moleculaire.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"])
         self.moleculaire = self.clear_ents(self.moleculaire)
         self.moleculaire = self.add_ents(self.moleculaire, genes)
 
-        #relations = self.add_speech_dependency(self.moleculaire, ["GENE_OR_GENE_PRODUCT"], ["ADJ"], search_tree=True)
-        #spans = self.map_to_prodigy_spans(self.moleculaire)
-
-        #return self.map_to_prodigy(self.moleculaire, spans, relations)
         return self.moleculaire
 
     def map_to_report(self, doc_parts:Union[spacy.tokens.doc.Doc, List[spacy.tokens.doc.Doc]]):
@@ -561,8 +564,12 @@ def compile_patterns(patterns:dict):
     regex = {}
     for name, pattern in patterns.items():
         flags = getattr(re, pattern["flags"])
+        start = pattern["start"]
         pattern = pattern["pattern"]
-        regex[name] = re.compile(f"{pattern}", flags)
+        regex[name] = {
+            "pattern" : re.compile(f"{pattern}", flags),
+            "start": start
+        }
 
     return regex
 
@@ -619,11 +626,7 @@ def run(data, output, patterns, pipe, api_key):
             api_key=api_key
         )
 
-        conclusion = report.extract_conclusion()
-        microscopy = report.extract_microscopy()
-        immunohistochemistry = report.extract_immunohistochemistry()
-        moleculaire = report.extract_moleculaire()
-        analyzed_report = report.map_to_report([conclusion, microscopy, immunohistochemistry, moleculaire])
+        analyzed_report = report.run_complete_pipeline()
 
         labels.extend([x["label"] for x in analyzed_report["spans"]])
         analyzed_reports.append(analyzed_report)
