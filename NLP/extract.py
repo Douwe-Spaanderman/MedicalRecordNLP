@@ -5,7 +5,9 @@ import json
 import pandas as pd
 import re
 import warnings
+import copy
 import requests
+import numpy as np
 
 import spacy
 import spacy.tokens.span
@@ -398,10 +400,11 @@ class PathologyReport(StandardizedReport):
 
         # Extract grade with matcher
         self.conclusion = self.extract_matcher_ents(self.conclusion, label="GRADE")
-        relations = self.add_speech_dependency(self.conclusion, ["GRADE"], ["ADJ", "NUM", "DET"])
-        spans = self.map_to_prodigy_spans(self.conclusion)
+        #relations = self.add_speech_dependency(self.conclusion, ["GRADE"], ["ADJ", "NUM", "DET"])
+        #spans = self.map_to_prodigy_spans(self.conclusion)
 
-        return self.map_to_prodigy(self.conclusion, spans, relations)
+        #return self.map_to_prodigy(self.conclusion, spans, relations)
+        return self.conclusion
 
     def extract_microscopy(self):
         self.microscopy = self.extract_patterns("Microscopy")
@@ -422,12 +425,13 @@ class PathologyReport(StandardizedReport):
         self.microscopy = self.add_ents(self.microscopy, genes)
 
         self.microscopy = self.extract_matcher_ents(self.microscopy)
-        relations = self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
-        relations += self.add_speech_dependency(self.microscopy, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
+        #relations = self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
+        #relations += self.add_speech_dependency(self.microscopy, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
 
-        spans = self.map_to_prodigy_spans(self.microscopy)
+        #spans = self.map_to_prodigy_spans(self.microscopy)
 
-        return self.map_to_prodigy(self.microscopy, spans, relations)
+        #return self.map_to_prodigy(self.microscopy, spans, relations)
+        return self.microscopy
 
     def extract_immunohistochemistry(self):
         self.immunohistochemistry = self.extract_patterns("Immunohistochemistry")
@@ -447,10 +451,11 @@ class PathologyReport(StandardizedReport):
         self.immunohistochemistry = self.clear_ents(self.immunohistochemistry)
         self.immunohistochemistry = self.add_ents(self.immunohistochemistry, genes)
 
-        relations = self.add_speech_dependency(self.immunohistochemistry, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
-        spans = self.map_to_prodigy_spans(self.immunohistochemistry)
+        #relations = self.add_speech_dependency(self.immunohistochemistry, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
+        #spans = self.map_to_prodigy_spans(self.immunohistochemistry)
 
-        return self.map_to_prodigy(self.immunohistochemistry, spans, relations)
+        #return self.map_to_prodigy(self.immunohistochemistry, spans, relations)
+        return self.immunohistochemistry
 
     def extract_moleculaire(self):
         self.moleculaire = self.extract_patterns("Moleculaire")
@@ -471,67 +476,86 @@ class PathologyReport(StandardizedReport):
         self.moleculaire = self.clear_ents(self.moleculaire)
         self.moleculaire = self.add_ents(self.moleculaire, genes)
 
-        relations = self.add_speech_dependency(self.moleculaire, ["GENE_OR_GENE_PRODUCT"], ["ADJ"], search_tree=True)
-        spans = self.map_to_prodigy_spans(self.moleculaire)
+        #relations = self.add_speech_dependency(self.moleculaire, ["GENE_OR_GENE_PRODUCT"], ["ADJ"], search_tree=True)
+        #spans = self.map_to_prodigy_spans(self.moleculaire)
 
-        return self.map_to_prodigy(self.moleculaire, spans, relations)
+        #return self.map_to_prodigy(self.moleculaire, spans, relations)
+        return self.moleculaire
 
-    def map_to_report(self, text_parts:Union[dict, List[dict]]):
-        if type(text_parts) == dict:
-            text_parts = [text_parts]
+    def map_to_report(self, doc_parts:Union[spacy.tokens.doc.Doc, List[spacy.tokens.doc.Doc]]):
+        if type(doc_parts) == dict:
+            doc_parts = [doc_parts]
 
-        spans = []
-        relations = []
-        for text_part in text_parts:
-            # Skip False
-            if not text_part:
-                continue
+        # Remove False
+        doc_parts = [doc_part for doc_part in doc_parts if doc_part]
 
-            start_location = self.report.find(text_part["text"])
+        # First identify where parts are in text
+        parts = []
+        for doc_part in doc_parts:
+            start_location = self.report.find(doc_part.text)
+            end_location = start_location + len(doc_part.text)
+            parts.append((start_location, end_location))
 
-            # Running doc_prior to get index number
-            doc_prior = self.report[:start_location]
-            doc_prior = self.run_bionlp13cg(doc_prior)
+        # Now combine these
+        order = sorted(range(len(parts)), key=parts.__getitem__)
+        parts = [parts[i] for i in order]
+        doc_parts = [doc_parts[i] for i in order]
 
-            try:
-                idx = doc_prior[-1].i + 1
-            except:
-                import ipdb; ipdb.set_trace()
+        structured_report = []
+        for idx, (part, doc_part) in enumerate(zip(parts, doc_parts)):
+            if idx == 0:
+                # Add start
+                if part[0] > 0:
+                    structured_report.append(self.run_bionlp13cg(self.report[:part[0]]))
+                structured_report.append(doc_part)
+            elif idx == len(parts) - 1:
+                # Add piece between analyzed documents
+                if part[0] > parts[idx-1][1]:
+                    structured_report.append(self.run_bionlp13cg(self.report[parts[idx-1][1]:part[0]]))
 
-            # Change spans
-            span = []
-            for s in text_part["spans"]:
-                s["start"] += start_location
-                s["end"] += start_location
-                s["token_start"] += idx
-                s["token_end"] += idx
-                span.append(s)
+                structured_report.append(doc_part)
+                # Add end
+                if part[1] < len(self.report):
+                    structured_report.append(self.run_bionlp13cg(self.report[part[1]:]))
+            else:
+                # There might be overlap but whatever
+                # Add piece between analyzed documents
+                if part[0] > parts[idx-1][1]:
+                    structured_report.append(self.run_bionlp13cg(self.report[parts[idx-1][1]:part[0]]))
 
-            spans.extend(span)
+                structured_report.append(doc_part)
 
-            # Change relations
-            if 'relations' in text_part:
-                relation = []
-                for r in text_part["relations"]:
-                    r["head"] += idx
-                    r["child"] += idx
-                    # head span
-                    r["head_span"]["start"] += start_location
-                    r["head_span"]["end"] += start_location
-                    r["head_span"]["token_start"] += idx
-                    r["head_span"]["token_end"] += idx
-                    # child span
-                    r["child_span"]["start"] += start_location
-                    r["child_span"]["end"] += start_location
-                    r["child_span"]["token_start"] += idx
-                    r["child_span"]["token_end"] += idx
-                    relation.append(r)
+        # Needed to concat the documents
+        # This is actually implemented in a newer version of spacy under merge.from_docs, however not in one compatible with scispacy
+        attrs = ["LEMMA", "NORM", "ENT_IOB", "ENT_KB_ID", "ENT_TYPE", "TAG", "POS", "HEAD", "DEP", "SPACY"]
+        vocab = {doc.vocab for doc in structured_report}
+        (vocab,) = vocab
+        concat_words = []
+        concat_spaces = []
+        concat_user_data = {}
+        char_offset = 0
+        for doc in structured_report:
+            concat_words.extend(t.text for t in doc)
+            concat_spaces.extend(bool(t.whitespace_) for t in doc)
 
-                relations.extend(relation)
+            for key, value in doc.user_data.items():
+                if isinstance(key, tuple) and len(key) == 4:
+                    data_type, name, start, end = key
+                    if start is not None or end is not None:
+                        start += char_offset
+                        if end is not None:
+                            end += char_offset
+                        concat_user_data[(data_type, name, start, end)] = copy.copy(value)
+                    else:
+                        warnings.warn("start or end is none")
+                else:
+                    warnings.warn("weeird key encountered")
+            char_offset += len(doc.text) if doc[-1].is_space else len(doc.text) + 1
 
-        report = self.run_bionlp13cg(self.report)
-
-        return self.map_to_prodigy(report, spans, relations)
+        arrays = [doc.to_array(attrs) for doc in structured_report]
+        concat_array = np.concatenate(arrays)
+        concat_doc = spacy.tokens.doc.Doc(vocab, words=concat_words, spaces=concat_spaces, user_data=concat_user_data)
+        return concat_doc.from_array(attrs, concat_array)
 
 def compile_patterns(patterns:dict):
     regex = {}
@@ -600,7 +624,7 @@ def run(data, output, patterns, pipe, api_key):
         immunohistochemistry = report.extract_immunohistochemistry()
         moleculaire = report.extract_moleculaire()
         analyzed_report = report.map_to_report([conclusion, microscopy, immunohistochemistry, moleculaire])
-    
+
         labels.extend([x["label"] for x in analyzed_report["spans"]])
         analyzed_reports.append(analyzed_report)
 
