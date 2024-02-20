@@ -160,5 +160,6 @@ coverage
 
 data/*
 NLP/venv/*
+Prodigy/venv/*
 
 .vscode/*

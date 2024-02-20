@@ -54,6 +54,10 @@ text = """
 Immunohistochemistry: tumour cells are positive for DOG-1 and CD117
 """
 
+text = """
+Around some deposition of haemosiderin pigment
+"""
+
 # Process the text with spaCy
 doc = nlp(text)
 

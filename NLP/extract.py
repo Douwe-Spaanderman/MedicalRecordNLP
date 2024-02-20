@@ -34,6 +34,15 @@ class StandardizedReport:
         self.linker = linker
         self.api_key = api_key
 
+        # replace all the spaces
+        self.report = self.remove_spaces(self.report)
+
+    def remove_spaces(self, text:str) -> str:
+        text = re.sub(r'\r\n', r'\n', text)
+        text = re.sub(r'(\n)', r' ', text)
+        text = re.sub(r'( ){2,}', r'\n', text)
+        return text
+
     def run_bionlp13cg(self, text:str) -> spacy.tokens.doc.Doc:
         """
         Text to Doc using bionlp13cg scispacy model
@@ -150,7 +159,9 @@ class StandardizedReport:
                     relations, relation_found = self.check_dependency(ent, token, dependencies, additional_token, relations, relation_found)
 
             if search_tree and not relation_found: 
-                import ipdb; ipdb.set_trace()
+                for token in ent.root.ancestors:
+                    for t in token.children:
+                        relations, relation_found = self.check_dependency(ent, t, dependencies, additional_token, relations, relation_found)
             
         return relations
 
@@ -273,14 +284,14 @@ class StandardizedReport:
 
         return cleaned_ents
 
-    def map_to_prodigy_relation(self, head:spacy.tokens.token.Token, child:spacy.tokens.span.Span, label:str='CONTEXT'):
+    def map_to_prodigy_relation(self, head:spacy.tokens.token.Token, child:spacy.tokens.span.Span):
         '''
         Map relations ship, i.e. head and child to prodigy format
         '''
         return {
             "head": head.i,
             "child": child.start,
-            "label": label,
+            "label": child.label_,
             "head_span": {"start": head.idx, "end": head.idx+len(head.text), "token_start": head.i, "token_end": head.i, "label": None},
             "child_span": {"start": child.start_char, "end": child.end_char, "token_start": child.start, "token_end": child.end, "label": child.label_}
         }
@@ -351,14 +362,10 @@ class PathologyReport(StandardizedReport):
         )
 
         self.verbose = verbose
-        # Extract parts of text
+        # For debugging see what is in compliance
         self.compliance = self.extract_patterns("Compliance")
         if self.compliance:
             import ipdb; ipdb.set_trace()
-
-        # Save spans and relations as prodigy object
-        self.spans = []
-        self.relations = []
 
     def extract_conclusion(self):
         self.conclusion = self.extract_patterns("Conclusion")
@@ -416,7 +423,7 @@ class PathologyReport(StandardizedReport):
 
         self.microscopy = self.extract_matcher_ents(self.microscopy)
         relations = self.add_speech_dependency(self.microscopy, ["NECROSIS", "MITOSIS"], ["ADJ", "NUM", "DET"], "HPF")
-        relations += self.add_speech_dependency(self.microscopy, ["GENE_OR_GENE_PRODUCT"], ["ADJ"], search_tree=True)
+        relations += self.add_speech_dependency(self.microscopy, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
 
         spans = self.map_to_prodigy_spans(self.microscopy)
 
@@ -440,7 +447,7 @@ class PathologyReport(StandardizedReport):
         self.immunohistochemistry = self.clear_ents(self.immunohistochemistry)
         self.immunohistochemistry = self.add_ents(self.immunohistochemistry, genes)
 
-        relations = self.add_speech_dependency(self.immunohistochemistry, ["GENE_OR_GENE_PRODUCT"], ["ADJ"], search_tree=True)
+        relations = self.add_speech_dependency(self.immunohistochemistry, ["GENE_OR_GENE_PRODUCT"], ["ADJ", "DET"], search_tree=True)
         spans = self.map_to_prodigy_spans(self.immunohistochemistry)
 
         return self.map_to_prodigy(self.immunohistochemistry, spans, relations)
@@ -469,6 +476,63 @@ class PathologyReport(StandardizedReport):
 
         return self.map_to_prodigy(self.moleculaire, spans, relations)
 
+    def map_to_report(self, text_parts:Union[dict, List[dict]]):
+        if type(text_parts) == dict:
+            text_parts = [text_parts]
+
+        spans = []
+        relations = []
+        for text_part in text_parts:
+            # Skip False
+            if not text_part:
+                continue
+
+            start_location = self.report.find(text_part["text"])
+
+            # Running doc_prior to get index number
+            doc_prior = self.report[:start_location]
+            doc_prior = self.run_bionlp13cg(doc_prior)
+
+            try:
+                idx = doc_prior[-1].i + 1
+            except:
+                import ipdb; ipdb.set_trace()
+
+            # Change spans
+            span = []
+            for s in text_part["spans"]:
+                s["start"] += start_location
+                s["end"] += start_location
+                s["token_start"] += idx
+                s["token_end"] += idx
+                span.append(s)
+
+            spans.extend(span)
+
+            # Change relations
+            if 'relations' in text_part:
+                relation = []
+                for r in text_part["relations"]:
+                    r["head"] += idx
+                    r["child"] += idx
+                    # head span
+                    r["head_span"]["start"] += start_location
+                    r["head_span"]["end"] += start_location
+                    r["head_span"]["token_start"] += idx
+                    r["head_span"]["token_end"] += idx
+                    # child span
+                    r["child_span"]["start"] += start_location
+                    r["child_span"]["end"] += start_location
+                    r["child_span"]["token_start"] += idx
+                    r["child_span"]["token_end"] += idx
+                    relation.append(r)
+
+                relations.extend(relation)
+
+        report = self.run_bionlp13cg(self.report)
+
+        return self.map_to_prodigy(report, spans, relations)
+
 def compile_patterns(patterns:dict):
     regex = {}
     for name, pattern in patterns.items():
@@ -478,7 +542,7 @@ def compile_patterns(patterns:dict):
 
     return regex
 
-def run(data, patterns, pipe, api_key):
+def run(data, output, patterns, pipe, api_key):
     out = Path(data)
     data = pd.read_csv(out)
 
@@ -516,8 +580,10 @@ def run(data, patterns, pipe, api_key):
 
     regex = compile_patterns(patterns)
 
+    analyzed_reports = []
+    labels = []
     data = data.reset_index(drop=True)
-    for row, item in data.iterrows():
+    for row, item in data[0:2].iterrows():
         report = PathologyReport(
             name=item["member_entity_Patient_value"], 
             report=item["Translation"], 
@@ -529,14 +595,27 @@ def run(data, patterns, pipe, api_key):
             api_key=api_key
         )
 
-        moleculaire = report.extract_moleculaire()
         conclusion = report.extract_conclusion()
         microscopy = report.extract_microscopy()
         immunohistochemistry = report.extract_immunohistochemistry()
-        
-        import ipdb; ipdb.set_trace()
+        moleculaire = report.extract_moleculaire()
+        analyzed_report = report.map_to_report([conclusion, microscopy, immunohistochemistry, moleculaire])
+    
+        labels.extend([x["label"] for x in analyzed_report["spans"]])
+        analyzed_reports.append(analyzed_report)
 
-    import ipdb; ipdb.set_trace()
+    # Save as json lines format
+    output = Path(output)
+    with open(output.with_suffix('.jsonl'), 'w') as f:
+        for item in analyzed_reports:
+            json.dump(item, f)
+            f.write('\n')
+
+    # Save unique labels
+    labels = list(set(labels))
+    with open(output.with_suffix('.txt'), 'w') as f:
+        for label in labels:
+            f.write(f"{label}\n")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -548,6 +627,13 @@ def main():
         required=True,
         type=str,
         help="Path to the translated pathology data",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        type=str,
+        help="Path to the save analyzed reports (as jsonl)",
     )
     parser.add_argument(
         "-r",
@@ -581,7 +667,7 @@ def main():
             warnings.warn("API key not provided and not found in environment variable, UMLS api will be disabled")
             api_key = None
         
-    run(args.input, args.regex, args.pipe, api_key)
+    run(args.input, args.output, args.regex, args.pipe, api_key)
 
 if __name__ == "__main__":
     main()

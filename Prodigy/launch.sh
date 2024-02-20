@@ -1,0 +1,1 @@
+prodigy rel.manual ner_rels blank:en ../data/analyzed_reports.jsonl --label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN --span-label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN
