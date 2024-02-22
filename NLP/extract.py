@@ -15,7 +15,7 @@ import spacy.tokens.doc
 import spacy.matcher.matcher
 import spacy.lang.en
 from spacy.tokens import Span
-Span.set_extension("linker", default=False)
+Span.set_extension("linker", default=None)
 from spacy.matcher import Matcher
 import scispacy
 from scispacy.linking import EntityLinker
@@ -310,8 +310,8 @@ class StandardizedReport:
             "head": head.i,
             "child": child.start,
             "label": child.label_,
-            "head_span": {"start": head.idx, "end": head.idx+len(head.text), "token_start": head.i, "token_end": head.i, "label": None},
-            "child_span": {"start": child.start_char, "end": child.end_char, "token_start": child.start, "token_end": child.end, "label": child.label_}
+            "head_span": {"start": head.idx, "end": head.idx+len(head), "token_start": head.i, "token_end": head.i, "label": None},
+            "child_span": {"start": child.start_char, "end": child.end_char, "token_start": child.start, "token_end": child.end-1, "label": child.label_}
         }
 
     def map_to_prodigy_span(self, ent:spacy.tokens.span.Span):
@@ -322,8 +322,9 @@ class StandardizedReport:
             "start": ent.start_char, 
             "end": ent.end_char, 
             "token_start": ent.start,
-            "token_end": ent.end,
-            "label": ent.label_
+            "token_end": ent.end-1,
+            "label": ent.label_,
+            "linker": ent._.linker
         }
 
     def map_to_prodigy_spans(self, doc:spacy.tokens.doc.Doc):
@@ -345,9 +346,10 @@ class StandardizedReport:
                 {
                     "text" : token.text,
                     "start" : token.idx,
-                    "end" : token.idx+len(token.text),
+                    "end" : token.idx+len(token),
                     "id" : token.i,
-                    "ws" : not (token.is_punct or token.is_space),
+                    "ws" : bool(token.whitespace_),
+                    "disabled": token.is_punct or token.is_space or token.is_bracket
                 }
             )
 
@@ -468,7 +470,7 @@ class PathologyReport(StandardizedReport):
             self.grade = self.clean_ents_text_range(self.grade, microscopy)
 
         # Extract mitosis with matcher
-        self.mitosis = self.extract_matcher_ents(self.report, label="GRADE")
+        self.mitosis = self.extract_matcher_ents(self.report, label="MITOSIS")
         self.mitosis = self.clean_ents_text_range(self.mitosis, microscopy)
 
         # Extract necrosis with matcher
