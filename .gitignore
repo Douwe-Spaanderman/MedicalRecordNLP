@@ -160,8 +160,10 @@ coverage
 
 data/*
 NLP/venv/*
+NLP/translatevenv/*
 Prodigy/*
 Prodigy/venv/*
+slurm/*
 
 .vscode/*
 *__pycache__*

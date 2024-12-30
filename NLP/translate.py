@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import pickle
 import os
 import pandas as pd
 
@@ -87,13 +88,72 @@ def translate_text(text: str) -> str:
 
     return translated_text
 
+# Function to translate and save intermediate results
+def process_pathology(pathology, output_dir, batch_size=100):
+    output_dir = Path(output_dir)  # Ensure output_dir is a Path object
+    output_dir.mkdir(parents=True, exist_ok=True)  # Create the directory if it doesn't exist
+    translations = []
+    processed_indices = set()
+
+    # Check for already processed files
+    for file in output_dir.glob("translation_*.pkl"):
+        idx = int(file.stem.split("_")[-1])  # Extract index from file name
+        processed_indices.add(idx)
+
+    for idx, item in pathology.iterrows():
+        if idx in processed_indices:
+            continue  # Skip already processed items
+
+        try:
+            translation = translate_text(item["presentedForm_data"])
+        except Exception as e:
+            print(f"Error processing index {idx}: {e}")
+            continue
+
+        translations.append({"index": idx, "translation": translation})
+
+        # Save translation immediately as a .pkl file
+        with (output_dir / f"translation_{idx}.pkl").open("wb") as f:
+            pickle.dump({"index": idx, "translation": translation}, f)
+
+        # Optional: Save after every batch to reduce memory usage
+        if len(translations) >= batch_size:
+            save_translations_to_csv(translations, output_dir)
+            translations = []
+
+    # Save remaining translations to CSV
+    if translations:
+        save_translations_to_csv(translations, output_dir)
+
+# Function to save translations as CSV
+def save_translations_to_csv(translations, output_dir):
+    intermediate_csv = output_dir / "translations.csv"
+    df = pd.DataFrame(translations)
+    if intermediate_csv.exists():
+        df_existing = pd.read_csv(intermediate_csv)
+        df = pd.concat([df_existing, df], ignore_index=True)
+    df.to_csv(intermediate_csv, index=False)
+
+# Function to combine all translations into the final DataFrame
+def combine_translations(pathology, output_dir):
+    output_dir = Path(output_dir)  # Ensure output_dir is a Path object
+    translations = []
+    for file in output_dir.glob("translation_*.pkl"):
+        print(file)
+        with file.open("rb") as f:
+            translations.append(pickle.load(f))
+
+    # Combine into a single DataFrame
+    df_translations = pd.DataFrame(translations).set_index("index")
+    pathology = pathology.join(df_translations, how="left")
+    return pathology
 
 def run(data):
     data = Path(data)
-    out = data.parent / "pathology_translated.csv"
+    out = data.parent
 
     data = pd.read_csv(data)
-    if "Translation" in data.columns:
+    if "translation" in data.columns:
         raise ValueError(
             "It seems like to document already has translated reports... stopping here, please check"
         )
@@ -103,17 +163,10 @@ def run(data):
     pathology = pathology.dropna(subset=["presentedForm_data"])
     pathology = pathology.reset_index()
 
-    translations = []
-    for idx, item in pathology.iterrows():
-        print(idx)
-        translation = translate_text(item["presentedForm_data"])
-        translations.append(translation)
+    process_pathology(pathology, output_dir=out / "pathology_translations")
 
-    pathology = pathology
-    pathology["Translation"] = translations
-
-    pathology.to_csv(out)
-
+    final_pathology = combine_translations(pathology, output_dir=out / "pathology_translations")
+    final_pathology.to_csv("pathology_translated.csv", index=False)
 
 def main():
     parser = argparse.ArgumentParser(

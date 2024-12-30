@@ -31,7 +31,7 @@ python translate.py -i ../data/Verslagen_202310112035.csv
 
 Next, you we analyze the results using pathology.py. Notice that we also provide the regex patterns and matcher pipe.
 ```sh
-python pathology.py -i ../data/pathology_translated.csv -o ../data/analyzed_reports.jsonl -r regex_pattern.json -p pipe.json
+python pathology.py -i ../data/pathology_translated.csv -o ../data/analyzed_reports.jsonl -r ../resources/regex_pattern.json -p ../resources/pipe.json
 ```
 
 The output of the analyzes is in the jsonl format, which is directly compatible with Prodigy.

@@ -92,27 +92,21 @@ class PathologyReport(StandardizedReport):
             return False
 
         # Extract spans from different parts of the report
+        self.extract_compliance()
         self.extract_conclusion()
         self.extract_microscopy()
         self.extract_immunohistochemistry()
         self.extract_moleculaire()
 
-        # For debugging see what is in compliance
-        self.compliance = self.extract_patterns("Compliance")
-        if self.compliance:
-            import ipdb
-
-            ipdb.set_trace()
-
-        # clean and add ents to self.report
+        # clean and add ents to self.report # NOTE order here is important as overwriting in add_ents
         combined_ents = (
-            self.phenotype
+            self.genes
+            + self.mitosis
+            + self.necrosis
             + self.location
             + self.cell
             + self.grade
-            + self.genes
-            + self.mitosis
-            + self.necrosis
+            + self.phenotype
         )
         self.report = self.clear_ents(self.report)
         self.report = self.add_ents(self.report, combined_ents)
@@ -132,6 +126,60 @@ class PathologyReport(StandardizedReport):
         spans = self.map_to_prodigy_spans(self.report)
 
         return self.map_to_prodigy(self.report, spans, relations)
+
+    def extract_compliance(self) -> Optional[bool]:
+        """
+        Extracts the compliance section of the pathology report, and processes the entities
+        related to phenotype, location, cell type, and grade. Note this is very similar to the conclusion.
+
+        Returns
+        -------
+        bool
+            False if no compliance is found; otherwise processes and updates the relevant attributes.
+        """
+        compliance = self.extract_patterns("Compliance")
+        if not compliance:
+            if self.verbose:
+                warnings.warn(
+                    f"You tried to extract compliance, however no regex match was found"
+                )
+            return False
+
+        # Phenotype has CANCER label
+        self.phenotype = [
+            ent
+            for ent in self.report.ents
+            if ent.label_ == "CANCER" and not ent.text.upper() == "TUMOR"
+        ]
+        if not self.phenotype:
+            self.phenotype = [ent for ent in self.report.ents if ent.label_ == "CELL"]
+
+        self.phenotype = self.clean_ents_text_range(self.phenotype, compliance)
+        self.phenotype = self.clean_ents(self.phenotype)
+
+        # Location has ORGAN/TISSUE/ANATOMICAL_SYSTEM label
+        self.location = [
+            ent
+            for ent in self.report.ents
+            if ent.label_ in ["ORGAN", "TISSUE", "ANATOMICAL_SYSTEM"]
+        ]
+        self.location = self.clean_ents_text_range(self.location, compliance)
+        self.location = self.clean_ents(self.location)
+
+        # Cell type based on CELL label
+        if not self.cell:
+            self.cell = tuple(
+                [
+                    ent
+                    for ent in self.report.ents
+                    if ent.label_ == "CELL" and not ent.text.upper() == "CELL"
+                ]
+            )
+            self.cell = self.clean_ents_text_range(self.cell, compliance)
+
+        # Extract grade with matcher
+        self.grade = self.extract_matcher_ents(self.report, label="GRADE")
+        self.grade = self.clean_ents_text_range(self.grade, compliance)
 
     def extract_conclusion(self) -> Optional[bool]:
         """
@@ -310,9 +358,9 @@ def run(data, output, patterns, pipe, api_key):
     # Removing cytology:
     data = data[data["code_display"] != "Cytology report"]
 
-    if "Translation" not in data.columns:
+    if "translation" not in data.columns:
         raise ValueError(
-            "It seems like to document already has not been translated... stopping here, please run translate"
+            "It seems like the document has not been translated... stopping here, please run translate"
         )
 
     ## Load all available NLP models
@@ -345,7 +393,7 @@ def run(data, output, patterns, pipe, api_key):
     for row, item in data.iterrows():
         report = PathologyReport(
             name=item["member_entity_Patient_value"],
-            report=item["Translation"],
+            report=item["translation"],
             regex=regex,
             bionlp13cg=bionlp13cg,
             # core_sci=core_sci,

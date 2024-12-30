@@ -268,14 +268,16 @@ class StandardizedReport:
             Doc with added entity.
         """
         if any(
-            ent.start <= ent_.start < ent.end or ent.start < ent_.end <= ent.end
+            (ent.start <= ent_.start < ent.end or ent.start < ent_.end <= ent.end) or
+            (ent_.start <= ent.start < ent_.end or ent_.start < ent.end <= ent_.end)
             for ent_ in doc.ents
         ):
             doc.ents = (
                 ent_
                 for ent_ in doc.ents
                 if not (
-                    ent.start <= ent_.start < ent.end or ent.start < ent_.end <= ent.end
+                    (ent.start <= ent_.start < ent.end or ent.start < ent_.end <= ent.end) or
+                    (ent_.start <= ent.start < ent_.end or ent_.start < ent.end <= ent_.end)
                 )
             )
 
