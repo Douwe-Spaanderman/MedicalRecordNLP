@@ -66,6 +66,7 @@ class PathologyReport(StandardizedReport):
         )
 
         self.verbose = verbose
+        self.structure = [] # Structure report from where to extract data
         self.phenotype = ()
         self.location = ()
         self.cell = ()
@@ -125,7 +126,7 @@ class PathologyReport(StandardizedReport):
         # Map spans to prodigy
         spans = self.map_to_prodigy_spans(self.report)
 
-        return self.map_to_prodigy(self.report, spans, relations)
+        return self.map_to_prodigy(self.report, spans, relations, mute=self.structure)
 
     def extract_compliance(self) -> Optional[bool]:
         """
@@ -144,6 +145,9 @@ class PathologyReport(StandardizedReport):
                     f"You tried to extract compliance, however no regex match was found"
                 )
             return False
+
+        # Add compliance to structured reporting outline
+        self.structure.append(tuple(compliance))
 
         # Phenotype has CANCER label
         self.phenotype = [
@@ -199,6 +203,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
+        # Add conclusion to structured reporting outline
+        self.structure.append(tuple(conclusion))
+
         # Phenotype has CANCER label
         self.phenotype = [
             ent
@@ -252,6 +259,9 @@ class PathologyReport(StandardizedReport):
                     f"You tried to extract microscopy, however no regex match was found"
                 )
             return False
+        
+        # Add microscopy to structured reporting outline
+        self.structure.append(tuple(microscopy))
 
         # For now clearing all not gene ents
         genes = tuple(
@@ -291,6 +301,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
+        # Add immunohistochemistry to structured reporting outline
+        self.structure.append(tuple(immunohistochemistry))
+
         # For now clearing all not gene ents
         genes = tuple(
             [ent for ent in self.report.ents if ent.label_ == "GENE_OR_GENE_PRODUCT"]
@@ -315,6 +328,9 @@ class PathologyReport(StandardizedReport):
                     f"You tried to extract moleculaire, however no regex match was found"
                 )
             return False
+
+        # Add moleculaire to structured reporting outline
+        self.structure.append(tuple(moleculaire))
 
         # For now clearing all not gene ents
         genes = tuple(

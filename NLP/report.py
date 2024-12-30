@@ -699,11 +699,38 @@ class StandardizedReport:
             spans.append(self.map_to_prodigy_span(ent))
         return spans
 
+    def out_of_bounds(
+        self,
+        token: spacy.tokens.token.Token,
+        mute: Optional[List[tuple]] = None
+    ) -> bool:
+        """
+        Checks if the token is in mute (i.e. and not out of bounds). 
+        If not in mute (i.e. out of bounds), disable token.
+
+        Parameters
+        ----------
+        token : spacy.tokens.token.Token
+            The token to check.
+        mute : Optional[List[tuple]], optional
+            A list of start-end of structured reporting format to disable out of bound tokens.
+
+        Returns
+        -------
+        bool
+            True or False if token in any object of mute
+        """
+        if mute:
+            return all([not (start <= token.idx <= end) for start, end in mute])
+        else:
+            return False
+
     def map_to_prodigy(
         self,
         doc: spacy.tokens.doc.Doc,
         ent: List[dict],
-        relations: Optional[List[dict]] = False,
+        relations: Optional[List[dict]] = None,
+        mute: Optional[List[tuple]] = None
     ) -> dict:
         """
         Maps the tokens, entity spans, and optionally relationships of a document
@@ -717,6 +744,8 @@ class StandardizedReport:
             The entity spans in Prodigy format.
         relations : Optional[List[dict]], optional
             A list of relationships in Prodigy format, by default False.
+        mute : Optional[List[tuple]], optional
+            A list of start-end of structured reporting format to disable out of bound tokens.
 
         Returns
         -------
@@ -732,7 +761,7 @@ class StandardizedReport:
                     "end": token.idx + len(token),
                     "id": token.i,
                     "ws": bool(token.whitespace_),
-                    "disabled": token.is_punct or token.is_space or token.is_bracket,
+                    "disabled": token.is_punct or token.is_space or token.is_bracket or self.out_of_bounds(token, mute),
                 }
             )
 
