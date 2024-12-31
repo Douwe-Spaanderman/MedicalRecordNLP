@@ -47,8 +47,10 @@ prodigy db-in pathology ../data/analyzed_reports.jsonl
 
 Next, we can start the prodigy server with the loaded database (Note, you should provide the labels and span-labels used in your dataset):
 ```sh
-prodigy rel.manual pathology_corrected blank:en dataset:pathology --label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN --span-label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN
+prodigy rel.manual pathology_corrected blank:en dataset:pathology --loader pages:jsonl --label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN --span-label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN
 ```
+
+Note that `--loader pages:jsonl` is used above, this is optional for loading multiple reports. I use this since I have multiple pathology reports for each patient.
 
 Prodigy keeps track of your annotation process and saves everything in the SQLite database. Finally, you can read either directly from this [SQLite database](https://prodi.gy/docs/api-database) or you extract the database to the jsonl format used also initally as input:
 ```sh
