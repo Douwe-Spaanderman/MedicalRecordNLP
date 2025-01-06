@@ -786,7 +786,7 @@ class StandardizedReport:
                     "end": token.idx + len(token),
                     "id": token.i,
                     "ws": bool(token.whitespace_),
-                    "disabled": token.is_punct or token.is_space or token.is_bracket or self.out_of_bounds(token, mute),
+                    "disabled": token.is_punct or token.is_space or token.is_bracket or not self.out_of_bounds(token, mute),
                 }
             )
 

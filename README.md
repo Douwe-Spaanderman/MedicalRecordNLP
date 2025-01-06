@@ -47,7 +47,7 @@ prodigy db-in pathology ../data/analyzed_reports.jsonl
 
 Next, we can start the prodigy server with the loaded database (Note, you should provide the labels and span-labels used in your dataset):
 ```sh
-prodigy rel.manual pathology_corrected blank:en dataset:pathology --loader pages:jsonl --label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN --span-label GENE_OR_GENE_PRODUCT,CELL,MITOSIS,GRADE,CANCER,NECROSIS,ORGAN
+prodigy rel.manual pathology_corrected blank:en dataset:pathology --loader pages:jsonl --label CANCER,GRADE,ORGAN,CELL,MITOSIS,NECROSIS,GENE_OR_GENE_PRODUCT,GRANULAR_DISEASE,SUSPECTED_CANCER,OTHERDISEASE --span-label CANCER,GRADE,ORGAN,CELL,MITOSIS,NECROSIS,GENE_OR_GENE_PRODUCT,GRANULAR_DISEASE,SUSPECTED_CANCER,OTHERDISEASE
 ```
 
 Note that `--loader pages:jsonl` is used above, this is optional for loading multiple reports. I use this since I have multiple pathology reports for each patient.

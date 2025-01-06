@@ -99,13 +99,9 @@ class PathologyReport(StandardizedReport):
         self.extract_immunohistochemistry()
         self.extract_moleculaire()
 
-        # Create a manual ent for the header
-        header = tuple([self.manual_ent_by_range(self.report, (0, self.header), "Header")])
-
         # clean and add ents to self.report # NOTE order here is important as overwriting in add_ents
         combined_ents = (
-            header
-            + self.genes
+            self.genes
             + self.mitosis
             + self.necrosis
             + self.location
