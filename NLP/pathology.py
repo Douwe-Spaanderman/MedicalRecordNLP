@@ -415,22 +415,33 @@ def run(data, output, patterns, pipe, api_key):
     analyzed_reports = []
     labels = []
     data = data.reset_index(drop=True)
-    for row, item in data.iterrows():
-        report = PathologyReport(
-            name=item["member_entity_Patient_value"],
-            report=item["translation"],
-            regex=regex,
-            bionlp13cg=bionlp13cg,
-            # core_sci=core_sci,
-            matcher=matcher,
-            linker=linker,
-            api_key=api_key,
-        )
+    for patient in data["member_entity_Patient_value"].unique():
+        patient_data = data[data["member_entity_Patient_value"] == patient]
 
-        analyzed_report = report.run_complete_pipeline()
+        titles = []
+        pages = []
+        for row, item in patient_data.iterrows():       
+            report = PathologyReport(
+                name=item["member_entity_Patient_value"],
+                report=item["translation"],
+                regex=regex,
+                bionlp13cg=bionlp13cg,
+                # core_sci=core_sci,
+                matcher=matcher,
+                linker=linker,
+                api_key=api_key,
+            )
 
-        labels.extend([x["label"] for x in analyzed_report["spans"]])
-        analyzed_reports.append(analyzed_report)
+            analyzed_report = report.run_complete_pipeline()
+            labels.extend([x["label"] for x in analyzed_report["spans"]])
+
+            titles.append(str(item["member_entity_Patient_value"]) + " - " + str(item["identifier_value"]))
+            pages.append(analyzed_report)
+
+        analyzed_reports.append({
+            "page_titles": titles,
+            "pages": pages
+        })
 
     # Save as json lines format
     output = Path(output)
