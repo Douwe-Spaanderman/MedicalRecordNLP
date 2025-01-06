@@ -284,6 +284,31 @@ class StandardizedReport:
         doc.ents = doc.ents + (ent,)
         return doc
 
+    def manual_ent_by_range(
+        self,
+        doc: spacy.tokens.doc.Doc,
+        ent_range: Tuple[int],
+        entity_label: str
+    ) -> spacy.tokens.span.Span:
+        """
+        Create an entity manually based a start-end (range) provided.
+
+        Parameters
+        ----------
+        doc : spacy.tokens.doc.Doc
+            Target Doc object.
+        ent_range : Tuple[int]
+            Tuple with start and end of new ent.
+        entity_label : str
+            Entity label to procide span
+
+        Returns
+        -------
+        spacy.tokens.span.Span
+            entity object.
+        """
+        return doc.char_span(ent_range[0], ent_range[1], label=entity_label) or doc.char_span(ent_range[0], ent_range[1] - 1, label=entity_label) # Sometimes requires one offset
+
     def add_speech_dependency(
         self,
         doc: spacy.tokens.doc.Doc,

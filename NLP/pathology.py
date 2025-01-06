@@ -66,7 +66,7 @@ class PathologyReport(StandardizedReport):
         )
 
         self.verbose = verbose
-        self.structure = [] # Structure report from where to extract data
+        self.header = None # Header to condense info
         self.phenotype = ()
         self.location = ()
         self.cell = ()
@@ -99,9 +99,13 @@ class PathologyReport(StandardizedReport):
         self.extract_immunohistochemistry()
         self.extract_moleculaire()
 
+        # Create a manual ent for the header
+        header = tuple([self.manual_ent_by_range(self.report, (0, self.header), "Header")])
+
         # clean and add ents to self.report # NOTE order here is important as overwriting in add_ents
         combined_ents = (
-            self.genes
+            header
+            + self.genes
             + self.mitosis
             + self.necrosis
             + self.location
@@ -126,7 +130,7 @@ class PathologyReport(StandardizedReport):
         # Map spans to prodigy
         spans = self.map_to_prodigy_spans(self.report)
 
-        return self.map_to_prodigy(self.report, spans, relations, mute=self.structure)
+        return self.map_to_prodigy(self.report, spans, relations, mute=[(0, self.header)])
 
     def extract_compliance(self) -> Optional[bool]:
         """
@@ -146,8 +150,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
-        # Add compliance to structured reporting outline
-        self.structure.append(tuple(compliance))
+        # Check if compliance is first part of structured report
+        if not self.header or self.header > compliance[0]:
+            self.header = compliance[0]
 
         # Phenotype has CANCER label
         self.phenotype = [
@@ -203,8 +208,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
-        # Add conclusion to structured reporting outline
-        self.structure.append(tuple(conclusion))
+        # Check if conclusion is first part of structured report
+        if not self.header or self.header > conclusion[0]:
+            self.header = conclusion[0]
 
         # Phenotype has CANCER label
         self.phenotype = [
@@ -260,8 +266,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
         
-        # Add microscopy to structured reporting outline
-        self.structure.append(tuple(microscopy))
+        # Check if microscopy is first part of structured report
+        if not self.header or self.header > microscopy[0]:
+            self.header = microscopy[0]
 
         # For now clearing all not gene ents
         genes = tuple(
@@ -301,8 +308,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
-        # Add immunohistochemistry to structured reporting outline
-        self.structure.append(tuple(immunohistochemistry))
+        # Check if immunohistochemistry is first part of structured report
+        if not self.header or self.header > immunohistochemistry[0]:
+            self.header = immunohistochemistry[0]
 
         # For now clearing all not gene ents
         genes = tuple(
@@ -329,8 +337,9 @@ class PathologyReport(StandardizedReport):
                 )
             return False
 
-        # Add moleculaire to structured reporting outline
-        self.structure.append(tuple(moleculaire))
+        # Check if moleculaire is first part of structured report
+        if not self.header or self.header > moleculaire[0]:
+            self.header = moleculaire[0]
 
         # For now clearing all not gene ents
         genes = tuple(
