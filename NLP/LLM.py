@@ -80,15 +80,17 @@ def run(data, patterns, small=False):
 
         # Define query prompt
         query = f"""
-        Extract the following information from the pathology report:
+        Extract the following information (if applicable) from the pathology report:
 
         1. Disease Type:
         2. Is it a soft tissue tumor? (Yes/No):
-        3. Is it benign or malignant?:
-        4. Tumor Grade (if applicable):
-        5. Organ in which the tumor is located:
-        6. Approximate number of mitotic figures:
-        7. Presence of necrosis (Yes/No) and approximate extent:
+        3. Is it suspected or confirmed? (Suspected/Confirmed):
+        4. Is it benign or malignant? (Benign/Malignant):
+        5. What is the tumor grade?:
+        6. Organ in which the tumor is located:
+        7. Approximate number of mitotic figures:
+        8. Presence of necrosis (Yes/No) and approximate extent:
+        9. Can you list all known mutation status? (e.g. BRAF V600E, BRAF wild type, or BRAF amplification):
 
         Pathology Report:
         {pathology_report}
