@@ -161,6 +161,7 @@ coverage
 data/*
 NLP/venv/*
 NLP/translatevenv/*
+NLP/llmvenv/*
 Prodigy/*
 Prodigy/venv/*
 slurm/*

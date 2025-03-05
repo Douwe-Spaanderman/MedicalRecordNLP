@@ -7,7 +7,7 @@ import re
 import warnings
 from typing import Optional
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from vllm import LLM, SamplingParams
 
 def compile_patterns(patterns: dict) -> dict:
     """
@@ -30,12 +30,32 @@ def compile_patterns(patterns: dict) -> dict:
     for name, pattern in patterns.items():
         flags = getattr(re, pattern["flags"])
         start = pattern["start"]
-        pattern = pattern["pattern"]e
+        pattern = pattern["pattern"]
         regex[name] = {"pattern": re.compile(f"{pattern}", flags), "start": start}
 
     return regex
 
-def run(data, patterns, small=False):
+def load_deepseek(model_name: str = "deepseek-ai/deepseek-v3"):
+    """
+    Loads the DeepSeek-V3 model using vLLM.
+    """
+    llm = LLM(model=model_name, trust_remote_code=True, tensor_parallel_size=1)  # Adjust tensor_parallel_size based on GPU count
+    return llm
+
+def generate_response(llm, query, max_tokens=500, temperature=0.2, top_p=0.9, repetition_penalty=1.2):
+    """
+    Generates a response using DeepSeek-V3 with vLLM.
+    """
+    sampling_params = SamplingParams(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+    )
+    responses = llm.generate([query], sampling_params)
+    return responses[0].outputs[0].text
+
+def run(data, patterns):
     out = Path(data)
     data = pd.read_csv(out)
 
@@ -53,12 +73,8 @@ def run(data, patterns, small=False):
 
     regex = compile_patterns(patterns)
 
-    if small:
-        tokenizer = AutoTokenizer.from_pretrained("epfl-llm/meditron-7b")
-        model = AutoModelForCausalLM.from_pretrained("epfl-llm/meditron-7b")
-    else:
-        tokenizer = AutoTokenizer.from_pretrained("epfl-llm/meditron-70b")
-        model = AutoModelForCausalLM.from_pretrained("epfl-llm/meditron-70b")
+    # Load DeepSeek-V3 model using vLLM
+    llm = load_deepseek()
 
     analyzed_reports = []
     data = data.reset_index(drop=True)
@@ -76,40 +92,50 @@ def run(data, patterns, small=False):
                 start, end = matches.span()
                 pathology_report += translation[start:end]
 
-        
-
         # Define query prompt
         query = f"""
-        Extract the following information (if applicable) from the pathology report:
+        Extract the following information (if reported) from the pathology report:
 
-        1. Disease Type:
-        2. Is it a soft tissue tumor? (Yes/No):
-        3. Is it suspected or confirmed? (Suspected/Confirmed):
-        4. Is it benign or malignant? (Benign/Malignant):
-        5. What is the tumor grade?:
-        6. Organ in which the tumor is located:
-        7. Approximate number of mitotic figures:
-        8. Presence of necrosis (Yes/No) and approximate extent:
-        9. Can you list all known mutation status? (e.g. BRAF V600E, BRAF wild type, or BRAF amplification):
+        1. Disease Type (Short based on Unified Medical Language System):
+        2. Disease Type specific:
+        3. Is it a soft tissue tumor? (Yes/No):
+        4. Is it suspected or confirmed? (Suspected/Confirmed):
+        5. Is it benign or malignant? (Benign/Malignant):
+        6. What is the tumor grade?:
+        7. Organ in which the tumor is located:
+        8. Approximate number of mitotic figures:
+        9. Presence of necrosis (Yes/No) and approximate extent:
+        10. Can you list all known mutation status? (output structured should be geneX: mutationX | geneY: mutationY):
+        11. Can you list all known immunohistochemistry markers? (output structured should be markerX: expressionX | markerY: expressionY):
 
         Pathology Report:
-        {pathology_report}
+        "{pathology_report}"
         """
-        print(query)
+        # Generate response using vLLM
+        try:
+            response = generate_response(
+                llm,
+                query,
+                max_tokens=500,
+                temperature=0.2,
+                top_p=0.9,
+                repetition_penalty=1.2,
+            )
+            print(response)
+            analyzed_reports.append(response)
+        except Exception as e:
+            print(f"Error generating response for index {idx}: {e}")
+            analyzed_reports.append("Error")
 
-        generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-        response = generator(query, max_length=256, temperature=0.2, do_sample=False)
-
-        # Print the extracted information
-        extracted_info = response[0]["generated_text"]
-        print(extracted_info)
-
-        import ipdb; ipdb.set_trace()
-
+    # Save results
+    data["analyzed_report"] = analyzed_reports
+    output_path = out.parent / f"{out.stem}_analyzed.csv"
+    data.to_csv(output_path, index=False)
+    print(f"Analysis complete. Results saved to {output_path}")
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LLM using Meditron to extract information from 'verslagen' documents",
+        description="LLM using DeepSeek-V3 to extract information from 'verslagen' documents",
     )
     parser.add_argument(
         "-i",
@@ -125,16 +151,10 @@ def main():
         type=str,
         help="Path to the regex patterns to extract (should be .json file)",
     )
-    parser.add_argument(
-        "--small",
-        action="store_true",
-        default=False,
-        help="Use the smaller model (7b) instead of the large one (70b)",
-    )
-
+    
     args = parser.parse_args()
 
-    run(args.input, args.regex, args.small)
+    run(args.input, args.regex)
 
 
 if __name__ == "__main__":
