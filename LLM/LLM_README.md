@@ -70,7 +70,7 @@ Each DeepSeek model has different GPU requirements:
 
 ## Defining Extraction Rules with YAML
 
-The pipeline is configured via a YAML file that defines the whole prompt, including system instructions, which fields to extract and how to validate them, and optionally an example case. In resource you can find an example YAML file.
+The pipeline is configured via a YAML file that defines the whole prompt, including system instructions, which fields to extract and how to validate them, and optionally an example case. In resources you can find an example [YAML file](resources/config_parser_template.yaml).
 
 ### Example YAML Configuration
 
