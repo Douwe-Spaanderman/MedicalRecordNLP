@@ -1,6 +1,6 @@
 # MedicalRecordNLP
 
-## noSQL database
+## LLM
 
 
 
@@ -36,7 +36,7 @@ python pathology.py -i ../data/pathology_translated.csv -o ../data/analyzed_repo
 
 The output of the analyzes is in the jsonl format, which is directly compatible with Prodigy.
 
-## Prodigy
+### Prodigy
 
 We use prodigy to check and correct the analyzed reports in NLP, so we can adjust where needed. Some notes beforehand, I would generally recommend to setup another virtual environment with a newer version of Python > 3.9 to run Prodigy, as otherwise you are missing out on a lot of newer nice functionalities.
 
