@@ -1,0 +1,3 @@
+[submodule "MedicalRecordLLM"]
+	path = MedicalRecordLLM
+	url = git@github.com:Douwe-Spaanderman/MedicalRecordLLM.git
